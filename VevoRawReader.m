@@ -1,8 +1,10 @@
 classdef VevoRawReader < handle
-    %A class to read and organize raw Vevo LAZR-X files
+    % A MATLAB class to read, store and organize raw Vevo LAZR-X (and 2100)
+    % files and convert them to niftii files
+    % A. Kamali, University of Arizona, 2022
 
     properties
-        Property1
+        
     end
     
 %     Define static methods
@@ -69,36 +71,90 @@ classdef VevoRawReader < handle
             padded_image = padarray(RawDataLeftTopPadded,[BottomPad, RightPad], 'post');
         end
         
-        function foldernamesFinal = read_Bruker_folders(dirName)
+        function foldernames = folders_to_strings(dirName)
+            % creates a string array containing all the folders in a directory
+            % input arg:
+            % dirName: name of mother directory that contains the
+            % subdirectories of interest
         
             list_of_folders = dir(dirName); %specify directory
-            list_of_folders = list_of_folders([list_of_folders(:).isdir]); 
-            foldernamesFinal = {list_of_folders.name}; %reading the file names
-            foldernamesFinal = foldernamesFinal'; %transposing
-            foldernamesFinal = foldernamesFinal(3:end); %the first two elements are . and .. (not wanted)
-            foldernamesFinal = string(foldernamesFinal); %Convert to string array
-            % [~,ind] = sort(str2double(foldernamesFinal));
-            % foldernamesFinal = foldernamesFinal(ind);
-            % In case we have some folders in the raw bruker files which do not have numbers as file name
-            % foldernamesFinal(isnan(sort(str2double(foldernamesFinal)))) = [];
+            list_of_folders = list_of_folders([list_of_folders(:).isdir]); %filter only directories
+            foldernames = {list_of_folders.name}; %read folder names
+            foldernames = foldernames'; %transpose
+            foldernames = foldernames(3:end); %the first two elements are . and .. (not wanted)
+            foldernames = string(foldernames); %Convert to string array
+        end
+        
+        function vevo_niftii_header = make_niftii_header(scanmode, data_type, voxel_dimensions_array, imagesize, output_filename)
+            % create a niftii header struct file to be used when writing
+            % niftii files from raw Vevo files
+
+            % Input Args:
+            % scanmode: type of scan (e.g. bmode_color, color, bmode_oxy,
+            % oxyhemo)
+            % data_type: data_type of image
+            % voxel_dimensions_array: voxel dimensions in mm
+            % imagesize: image dimensions
+            % output_filename: intended output filename to include in the
+            % header file
+            
+            % Outputs:
+            % vevo_niftii_header struct
+
+            % initialize the struct file for the .nii header
+            vevo_niftii_header = struct;
+            % The next two lines follow the same logic behind changing the
+            % orientaion from Vevo space to conventional MR space
+            % that is explained in niftii writer functions in this class
+            OriginalPixelDimensions = voxel_dimensions_array;
+            vevo_niftii_header.PixelDimensions = [OriginalPixelDimensions(2), OriginalPixelDimensions(3),OriginalPixelDimensions(1)];
+            
+            % we will
+            % need fields specific for a .nii file. The rest of this section adds these
+            % the the header struct file
+            vevo_niftii_header.Filename = output_filename;
+            vevo_niftii_header.SpaceUnits = 'Millimeter';
+            vevo_niftii_header.ImageSize = imagesize;
+            vevo_niftii_header.Description = scanmode;
+            vevo_niftii_header.Datatype = data_type;
+            vevo_niftii_header.Description = 'None';
+            vevo_niftii_header.Version = 'NIfTI1';
+            vevo_niftii_header.Qfactor = 1;
+            vevo_niftii_header.TimeUnits = 'None';
+            vevo_niftii_header.SliceCode = 'Unknown';
+            vevo_niftii_header.TransformName = 'Sform';
+            
+            % We should also position the image the right way when being read in
+            % ITK-Snap, MIPAV etc.: So we make an affine3d transform object and include the pixel
+            % dimensions in there. The transform type is similar to a conventional MR scan, e.g. T2-weighted MR
+            % image
+            
+            tform = affine3d([vevo_niftii_header.PixelDimensions(1) 0 0 0; ...
+                0 vevo_niftii_header.PixelDimensions(2) 0 0; ...
+                0 0 vevo_niftii_header.PixelDimensions(3) 0; ...
+                vevo_niftii_header.PixelDimensions(1) vevo_niftii_header.PixelDimensions(2) vevo_niftii_header.PixelDimensions(3) 1]);
+            
+            vevo_niftii_header.Transform = tform;
+            vevo_niftii_header.FrequencyDimension = 0;
+            vevo_niftii_header.PhaseDimension = 0;
+            vevo_niftii_header.SpatialDimension = 0;
+
+
         end
     end
 
 
 
     methods
-%         function obj = untitled4(inputArg1,inputArg2)
-%             %UNTITLED4 Construct an instance of this class
-%             %   Detailed explanation goes here
-%             obj.Property1 = inputArg1 + inputArg2;
-%         end
+
 
         function scan_info = scan_information_table(obj, directory_of_interest)
-            % creates a MATLAB table with information on scans in a given
+            % creates a MATLAB table with information on scans from a given
             % directory
-            % Input Args
+            % Input Args:
             % directory_of_interest (string): location of the raw files
-            % Output: MATLAB table with information on scans
+            % Output:
+            % MATLAB table with information on scans
 
             % find all files ending in .xml (header files)
             list_of_xmls = dir(fullfile(directory_of_interest, '*.raw.xml'));
@@ -123,7 +179,7 @@ classdef VevoRawReader < handle
                 % read several attributes from the header file
                 subject_ids{i} = obj.get_vevo_attribute(file_attribute, 'Series-Name');
                 step_size_3d{i} = obj.get_vevo_attribute(file_attribute, '3D-Step-Size');
-                total_steps_3d{i} = str2double(obj.get_vevo_attribute(file_attribute, '3D-Scan-Distance')) / str2double(obj.get_vevo_attribute(file_attribute, '3D-Step-Size'));
+                total_steps_3d{i} = round(str2double(obj.get_vevo_attribute(file_attribute, '3D-Scan-Distance')) / str2double(obj.get_vevo_attribute(file_attribute, '3D-Step-Size')));
                 time_of_scan = obj.get_vevo_attribute(file_attribute, 'Acquired-Time');
                 date_of_scan = obj.get_vevo_attribute(file_attribute, 'Acquired-Date');
                 scan_datetime = append(date_of_scan,' ',time_of_scan);
@@ -132,9 +188,23 @@ classdef VevoRawReader < handle
                 scan_datetimes{i} = datetime(scan_datetime,'InputFormat','MM/dd/yyyy h:mm:ss a');
                 directory_loc{i} = directory_of_interest;
                 
-                % Since OxyHemo scans have 'pamode' as their Mode-Name, we
+                
+                % If a file is not 3d, we have to manually write the
+                % total_steps_3d argument to be 1
+                if exist(fullfile(directory_of_interest, append(erase(filename,".raw.xml"),'.raw.3d.paoxy')),'file') ...
+                        || exist(fullfile(directory_of_interest, append(erase(filename,".raw.xml"),'.raw.3d.bmode')),'file') ...
+                        || exist(fullfile(directory_of_interest, append(erase(filename,".raw.xml"),'.raw.3d.color')),'file') ...
+                        || exist(fullfile(directory_of_interest, append(erase(filename,".raw.xml"),'.raw.3d.power')),'file') ...
+                        || exist(fullfile(directory_of_interest, append(erase(filename,".raw.xml"),'.raw.3d.pamode')),'file')
+                else
+                    total_steps_3d{i} = 1;
+                end
+
+                % Since OxyHemo scans have 'pamode' as their Mode-Name stored in the xml file, we
                 % distinguish them separately by detecting the file stored
                 % instead
+                
+                
                 if exist(fullfile(directory_of_interest, append(erase(filename,".raw.xml"),'.raw.3d.paoxy')),'file') ...
                         || exist(fullfile(directory_of_interest, append(erase(filename,".raw.xml"),'.raw.paoxy')),'file')
                     mode_names{i} = 'PaOxy-Mode';
@@ -149,6 +219,7 @@ classdef VevoRawReader < handle
             step_size_3d = step_size_3d';
             total_steps_3d = total_steps_3d';
             scan_datetimes = scan_datetimes';
+            directory_loc = directory_loc';
 
             % Erase the ".raw.xml" extension and save the filename
             file_names = erase(list_of_xmls,".raw.xml");
@@ -163,20 +234,18 @@ classdef VevoRawReader < handle
 
         function [Rawdata, WidthAxis, DepthAxis, ZAxis] = VsiOpenRawBmode8(obj,fnameBase)
 
-            % VsiOpenRawBmode8.m
-            % Copyright VisualSonics 1999-2012
-            % A. Needles
-            % Revision: 1.0 Oct 24 2012
+            % Modified from the work from A. Needles Copyright VisualSonics 1999-2012
             % A function to open RAW 8-bit B-Mode files from data export on the Vevo 2100
             % and read selected parameters
-            
-            % Updated by Ali Kamali Feb 2021
+            % Input Args:
+            % fnameBase: name of the raw file without any extensions 
 
+            % Outputs:
             % Rawdata is the raw bmode matrix 
-            % WidthAxis and DepthAxis are from the bmode window
-            % ZAxis depends on motor step size
+            % WidthAxis and DepthAxis are the lateral and axial axes from the bmode window
+            % ZAxis is the anterior-posterior axis that depends on motor
+            % step size and total number of steps
             
-            % fnameBase is the filename
             
             ModeName = '.bmode';
             
@@ -204,12 +273,6 @@ classdef VevoRawReader < handle
             BmodeDepth = str2double(obj.get_vevo_attribute(file_attribute, 'B-Mode/Depth')); %mm
             BmodeWidth = str2double(obj.get_vevo_attribute(file_attribute, 'B-Mode/Width')); %mm
 
-%             param = VsiParseXml(fnameXml, '.pamode');
-%             BmodeNumSamples = param.BmodeNumSamples;
-%             BmodeNumLines = param.BmodeNumLines;
-%             BmodeDepthOffset = param.BmodeDepthOffset; %mm
-%             BmodeDepth =  param.BmodeDepth; %mm
-%             BmodeWidth =  param.BmodeWidth; %mm
             step_size_3d = str2double(obj.get_vevo_attribute(file_attribute, '3D-Step-Size'));
             total_steps_3d = str2double(obj.get_vevo_attribute(file_attribute, '3D-Scan-Distance')) / str2double(obj.get_vevo_attribute(file_attribute, '3D-Step-Size'));
             total_steps_3d = round(double(round(total_steps_3d)));
@@ -220,7 +283,7 @@ classdef VevoRawReader < handle
             % This is to strip the header data in the files - DO NOT CHANGE
             size = 1; % - bytes
             file_header = 40; % 40bytes
-            line_header = 0; % 4bytes
+            line_header = 0; % 0bytes
             frame_header = 56; % 56bytes  
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             
@@ -232,7 +295,10 @@ classdef VevoRawReader < handle
             % Initialize data
             Rawdata = ones(BmodeNumSamples, BmodeNumLines,total_steps_3d,'int16');
             
+            % Scan the bindary file
             for iframe = 1:total_steps_3d
+                % Set the pointer location for the header information to
+                % skip that when reading the image slices
                 header = file_header + frame_header*iframe + (size*BmodeNumSamples*BmodeNumLines + BmodeNumLines*line_header)*(iframe-1);
                 for bmode_i=1:BmodeNumLines
                 
@@ -244,29 +310,147 @@ classdef VevoRawReader < handle
             
             fclose(fid);
         end
+        
+        
+        function [Rawdata,RawDataInBmodeSpace, WidthAxis, DepthAxis, ZAxis] = VsiOpenRawColor8(obj, fnameBase)
+            % Reads the raw color Doppler image
+            
+            % Input Args:
+            % fnameBase: name of the raw file without any extensions
+            
+            % Outputs:
+            % Rawdata is the raw Color Doppler matrix 
+            % RawDataInBmodeSpace is the raw Color Doppler matrix zeropadded to the
+            % accompanying Bmode space
+            % WidthAxis and DepthAxis are the lateral and axial axes from the color window
+            % ZAxis is the anterior-posterior axis that depends on motor step size and total number of steps
+                               
+            ModeName = '.color';
+            
+            % Set up file names
+            file_attribute = obj.read_vevo_xml(append(fnameBase,'.raw.xml'));
 
-        function [RawdataOxy, RawdataHbT, MaskHbT, TopPad, BottomPad, LeftPad, RightPad, WidthAxis, DepthAxis, ZAxis] = open_raw_oxyhemo(obj,fnameBase, HbTThreshold)
+            % Check to see if file is 3D
+            Filename3D = [fnameBase '.raw' '.3d' ModeName]; %Create a 3D filename that Vevo outputs if it is a 3D file
+            fstruct = dir(Filename3D); %Check to see if such file exists in the current directory
+            if isempty(fstruct)
+                fname = [fnameBase '.raw' ModeName]; % No .3d extension needed if the file is NOT 3D
+                total_steps_3d = 1;
+            else
+                fname = Filename3D;
+            end
+            
+            fnameXml = [fnameBase '.raw' '.xml'];
+            
+            % Parse the XML parameter file - DO NOT CHANGE
+            BmodeNumSamples = str2double(obj.get_vevo_attribute(file_attribute, 'B-Mode/Samples'));
+            BmodeNumLines = str2double(obj.get_vevo_attribute(file_attribute, 'B-Mode/Lines'));
+            BmodeDepthOffset = str2double(obj.get_vevo_attribute(file_attribute, 'B-Mode/Depth-Offset')); %mm
+            BmodeDepth = str2double(obj.get_vevo_attribute(file_attribute, 'B-Mode/Depth')); %mm
+            BmodeWidth = str2double(obj.get_vevo_attribute(file_attribute, 'B-Mode/Width')); %mm
+            
+            ColorNumSamples = str2double(obj.get_vevo_attribute(file_attribute, 'Color-Mode/Samples'));
+            ColorNumLines = str2double(obj.get_vevo_attribute(file_attribute, 'Color-Mode/Lines'));
+            ColorDepthOffset = str2double(obj.get_vevo_attribute(file_attribute, 'Color-Mode/Depth-Offset')); %mm
+            ColorDepth = str2double(obj.get_vevo_attribute(file_attribute, 'Color-Mode/Depth')); %mm
+            ColorWidth = str2double(obj.get_vevo_attribute(file_attribute, 'Color-Mode/Width')); %mm
+            ColorCentre = str2double(obj.get_vevo_attribute(file_attribute, 'Color-Mode/Centre')); %mm
+            SoundSpeedTissue = str2double(obj.get_vevo_attribute(file_attribute, 'Sound-Speed-Tissue'));
+            ColorTXPRF = str2double(obj.get_vevo_attribute(file_attribute, 'Color-Mode/TX-PRF'));
+            ColorTxFrequency = str2double(obj.get_vevo_attribute(file_attribute, 'Color-Mode/TX-Frequency'));
+            
+            
+            
+            
+            step_size_3d = str2double(obj.get_vevo_attribute(file_attribute, '3D-Step-Size'));
+            total_steps_3d = str2double(obj.get_vevo_attribute(file_attribute, '3D-Scan-Distance')) / str2double(obj.get_vevo_attribute(file_attribute, '3D-Step-Size'));
+            total_steps_3d = round(double(round(total_steps_3d)));
 
             
-            % VsiOpenRawOxyHemo.m
+            if isempty(fstruct)
+                total_steps_3d = 1;
+            end
+            
+            
+            lambda = SoundSpeedTissue/ColorTxFrequency; %mm Doppler transmit wavelength
+            VMax = ColorTXPRF*lambda/4; %mm/s Maximum unambiguous Doppler velocity
+            
+            % Defining parameters to help with positioninng the color image inside the bmode
+            % image. The formulas are directly copied from the C file.
+            OffsetLeft = (ColorCentre - ColorWidth / 2) - (-BmodeWidth / 2);
+            OffsetTop = ColorDepthOffset - BmodeDepthOffset;
+            
+            % Color mode depth and width
+            DepthAxis = [ColorDepthOffset:(ColorDepth-ColorDepthOffset)/(ColorNumSamples-1):ColorDepth];
+            WidthAxis = [OffsetLeft:ColorWidth/(ColorNumLines-1):ColorWidth+OffsetLeft];
+            
+            % Calculating the number of rows and columns to pad when putting in bmode
+            % space. Rounding is because the division alomost never returns an integer.
+            % The C code also truncates the values
+            OffsetTopSkipRows = round(OffsetTop/((BmodeDepth-BmodeDepthOffset)/(BmodeNumSamples-1)));
+            OffsetLeftSkipColumns = round(OffsetLeft/(BmodeWidth/(BmodeNumLines-1)));
+            
+            % This is to strip the header data in the files - DO NOT CHANGE
+            sizebyte = 2; % 2 bytes (The doppler data is stored as signed short datatype which is 2 bytes.
+            file_header = 40; % 40 bytes
+            line_header = 0; % 0 bytes (no line header for Doppler)
+            frame_header = 56; % 56bytes  
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            
+            fid = fopen(fname,'r');
+            DepthAxis = [BmodeDepthOffset:(BmodeDepth-BmodeDepthOffset)/(BmodeNumSamples-1):BmodeDepth];
+            WidthAxis = [0:BmodeWidth/(BmodeNumLines-1):BmodeWidth];
+            ZAxis = [0:step_size_3d:(total_steps_3d-1)*step_size_3d];
+
+            % Initialize data
+            Rawdata = zeros(ColorNumSamples, ColorNumLines,total_steps_3d, 'single');
+            
+            for iframe = 1:total_steps_3d
+                header = file_header + frame_header*iframe + (sizebyte*ColorNumSamples*ColorNumLines)*(iframe-1);
+                for color_i=1:ColorNumLines
+                
+                    fseek(fid, header + (sizebyte*ColorNumSamples + line_header)*(color_i-1),-1);
+                    % fseek(fid, line_header, 'cof');
+                    [Rawdata(:,color_i, iframe),~]=fread(fid, ColorNumSamples, 'short'); %the color doppler data is signed (negative and positive), and the data type should be defined as short
+                end    
+            end
+            
+            fclose(fid);
+
+            Rawdata = -255*Rawdata/32768; %Dividing by reference value found in the C code
+            Rawdata(Rawdata>255)=255; %Maxing out positive saturated signal at 255
+            Rawdata(Rawdata<-255)=-255; %Maxing out negative saturated signal at -255
+            Rawdata = Rawdata/255 * VMax; %Apllying the velocity band computed from PRF and wavelength
+            
+            % Positioning the Color Doppler data in its bmode space
+            RawDataLeftTopPadded = padarray(Rawdata,[OffsetTopSkipRows, OffsetLeftSkipColumns], 'pre');
+            RightPad = BmodeNumLines - size(RawDataLeftTopPadded,2);
+            BottomPad = BmodeNumSamples - size(RawDataLeftTopPadded,1);
+            RawDataInBmodeSpace = padarray(RawDataLeftTopPadded,[BottomPad, RightPad], 'post');
+        end
+    
+
+        function [RawdataOxy, RawdataHbT, MaskHbT, TopPad, BottomPad, LeftPad, RightPad, WidthAxis, DepthAxis, ZAxis] = open_raw_oxyhemo(obj,fnameBase, HbTThreshold)
             
             % A function to open RAW OxyHemo-Mode files from data export on the Vevo
             % LAZR-X and read selected parameters
             
+            % Input Args:
+            % fnameBase: name of the raw file without any extensions
+            % HbTThreshold: bottom percentage of signal to keep when reading
+            % the oxyhemo image
+            % e.g. an HbTThreshold of 20 (default value in VevoLab) means that the lowest 20% of total
+            % hemoglobin map pixel values are thrown out, and the top 80%
+            % are used to generate a binary map for the oxygenation image
             
+            % Outputs:
             % RawdataOxy is the raw Oxygenation image 
             % RawdataHbT is the raw total Hemoglobin image
             % MaskHbT is the HbT mask based on a given threshold 
-            % e.g. HbT Threshold in the Vevolab software is set to "20" by default. 
-            % What this means is that the lowest 20% of pixel values are thrown out, and the top 80% are used to generate a binary map.
             % The pad outputs specify the pad values necessary to pad the image into
-            % bmode space (at pa resolution)
+            % bmode space (at PAI resolution)
             % WidthAxis and DepthAxis are from the PAI window
             
-            % fnameBase is the filename
-            % iframe is the frame (or slice) number where data needs to be extracted
-            % from
-            % HbTThreshold
             ModeName = '.pamode';
             
             % Set up file names
@@ -289,27 +473,13 @@ classdef VevoRawReader < handle
             PaDepthOffset = str2double(obj.get_vevo_attribute(file_attribute, 'Pa-Mode/Depth-Offset')); %mm
             PaDepth = str2double(obj.get_vevo_attribute(file_attribute, 'Pa-Mode/Depth')); %mm
             PaWidth = str2double(obj.get_vevo_attribute(file_attribute, 'Pa-Mode/Width')); %mm
-            PaCentre =  - str2double(obj.get_vevo_attribute(file_attribute, 'Pa-Mode/Centre')); %mm
+            PaCentre =  str2double(obj.get_vevo_attribute(file_attribute, 'Pa-Mode/Centre')); %mm
             BmodeNumSamples = str2double(obj.get_vevo_attribute(file_attribute, 'B-Mode/Samples'));
             BmodeNumLines = str2double(obj.get_vevo_attribute(file_attribute, 'B-Mode/Lines'));
             BmodeDepthOffset = str2double(obj.get_vevo_attribute(file_attribute, 'B-Mode/Depth-Offset')); %mm
             BmodeDepth = str2double(obj.get_vevo_attribute(file_attribute, 'B-Mode/Depth')); %mm
             BmodeWidth = str2double(obj.get_vevo_attribute(file_attribute, 'B-Mode/Width')); %mm
 
-%             fnameXml = [fnameBase '.raw' '.xml'];
-%             % Parse the XML parameter file - DO NOT CHANGE
-%             param = VsiParseXml(fnameXml, '.paoxy');
-%             PaNumSamples = param.PaNumSamples;
-%             PaNumLines = param.PaNumLines;
-%             PaDepthOffset = param.PaDepthOffset; %mm
-%             PaDepth = param.PaDepth; %mm
-%             PaWidth = param.PaWidth; %mm
-%             PaCentre =  - param.PaCentre; %mm
-%             BmodeNumSamples = param.BmodeNumSamples; %mm
-%             BmodeNumLines = param.BmodeNumLines; %mm
-%             BmodeDepthOffset = param.BmodeDepthOffset; %mm
-%             BmodeDepth =  param.BmodeDepth; %mm
-%             BmodeWidth =  param.BmodeWidth; %mm
             step_size_3d = str2double(obj.get_vevo_attribute(file_attribute, '3D-Step-Size'));
             total_steps_3d = str2double(obj.get_vevo_attribute(file_attribute, '3D-Scan-Distance')) / str2double(obj.get_vevo_attribute(file_attribute, '3D-Step-Size'));
             total_steps_3d = round(double(round(total_steps_3d)));
@@ -350,7 +520,7 @@ classdef VevoRawReader < handle
             % The OxyHemo data for oxygenation and HbT are stored subsequently per frame, hence two channels
             RawdataOxy = zeros(PaNumSamples, PaNumLines,total_steps_3d,'single');
             
-            % First Channel (750nm data)
+            % First Channel (oxygenation)
             fid = fopen(fname,'r');
             for iframe = 1:total_steps_3d
                 header = file_header + frame_header*iframe + (2*sizebyte*PaNumSamples*PaNumLines + PaNumLines*line_header)*(iframe-1);
@@ -367,15 +537,15 @@ classdef VevoRawReader < handle
             RawdataOxy = 100*RawdataOxy/65535;
             
             
-            % Second Channel (850nm data)
+            % Second Channel (total hemoglobin)
             % Initialize data
             RawdataHbT = zeros(PaNumSamples, PaNumLines,total_steps_3d,'uint16');
             
             fid = fopen(fname,'r');
             % The data from the second channel is stored right after the first channel
             % per frame. So skipping the binary file by PaNumSamples*PaNumLines
-            % multiplied by the size (unsigned int = 2 bytes) takes us to the 850nm data
-            % channel per frame.
+            % multiplied by the size (unsigned int = 2 bytes) takes us to
+            % the second channel per frame.
             for iframe = 1:total_steps_3d
                 header = sizebyte*PaNumSamples*PaNumLines + file_header + frame_header*iframe + (2*sizebyte*PaNumSamples*PaNumLines + PaNumLines*line_header)*(iframe-1);
                 for i=1:PaNumLines
@@ -389,7 +559,7 @@ classdef VevoRawReader < handle
             % RawDataLeftTopPadded = padarray(RawdataHbT,[TopPad, LeftPad], 'pre');
             % RawdataHbTBmodeSpace = padarray(RawDataLeftTopPadded,[BottomPad, RightPad], 'post');
             
-            % creating a mask based on the HbT thresholding
+            % creating a mask per slice based on the HbT thresholding
             MaskHbT = zeros(size(RawdataHbT),'logical');
             for iframe = 1:total_steps_3d
                 RawdataHbT_2D= squeeze(RawdataHbT(:,:,iframe));
@@ -406,7 +576,18 @@ classdef VevoRawReader < handle
         
         
 
-        function vevo_niftii_write_oxyhemo(obj, fnameBase, scanmode, output_filename, file_to_save, HbTThreshold)
+        function vevo_niftii_write_oxyhemo(obj, fnameBase, output_filename, file_to_save, HbTThreshold)
+            % Writes a niftii file containing the oxyhemo information with
+            % given settings
+
+            % Input Args:
+            % fnameBase: name of the raw file without any extensions
+            % scanmode: 
+            % HbTThreshold: bottom percentage of signal to keep when reading
+            % the oxyhemo image
+            % e.g. an HbTThreshold of 20 (default value in VevoLab) means that the lowest 20% of total
+            % hemoglobin map pixel values are thrown out, and the top 80%
+            % are used to generate a binary map for the oxygenation image
 
             [RawdataOxy, RawdataHbT, MaskHbT, TopPad, BottomPad, LeftPad, RightPad, WidthAxis, DepthAxis, ZAxis] = open_raw_oxyhemo(obj,fnameBase, HbTThreshold);
 
@@ -419,20 +600,24 @@ classdef VevoRawReader < handle
                 case 'MaskHbT'
                     ImageData3D = MaskHbT;
             end
-            
+            scanmode = 'oxyhemo';
             % Bring into accompanying Bmode-Space
-            ImageData3D = padder(ImageData3D,TopPad, BottomPad, LeftPad, RightPad);
-
+            ImageData3D = obj.padder(ImageData3D,TopPad, BottomPad, LeftPad, RightPad);
+            
+            % Perform geometric transformations to put the image
+            % orientation matching conventional MR orientations
             ImageData3D = rot90(rot90(ImageData3D));
             ImageData3D = permute(ImageData3D, [2,3,1]);
             ImageData3D = flip(ImageData3D,2);
+
             OriginalPixelDimensions = [DepthAxis(2) - DepthAxis(1), WidthAxis(2) - WidthAxis(1), ZAxis(2) - ZAxis(1)];
             data_type = class(ImageData3D);
             vevo_niftii_header = obj.make_niftii_header(scanmode, data_type, OriginalPixelDimensions, size(ImageData3D), output_filename);
             niftiwrite(ImageData3D,[output_filename '_' scanmode], vevo_niftii_header, 'Compressed',true);
         end
 
-        function vevo_niftii_write_bmodeOH(obj, fnameBase, scanmode, output_filename)
+        function vevo_niftii_write_bmode(obj, fnameBase,scanmode, output_filename)
+            % Writes a niftii file containing the bmode image that is collected simultaneously with the oxyhemo information
 
             [Rawdata, WidthAxis, DepthAxis, ZAxis] = obj.VsiOpenRawBmode8(fnameBase);
             
@@ -447,54 +632,23 @@ classdef VevoRawReader < handle
             vevo_niftii_header = obj.make_niftii_header(scanmode, data_type, OriginalPixelDimensions, size(ImageData3D), output_filename);
             niftiwrite(ImageData3D,[output_filename '_' scanmode], vevo_niftii_header, 'Compressed',true);
         end
-        function vevo_niftii_header = make_niftii_header(obj,scanmode, data_type, voxel_dimensions_array, imagesize, output_filename)
-            % initialize the struct file for the .nii header
-            
-
-            vevo_niftii_header = struct;
-            % The next two lines follow the same logic behind changing the orientaion
-            % of the image previously explained
-            OriginalPixelDimensions = voxel_dimensions_array;
-            vevo_niftii_header.PixelDimensions = [OriginalPixelDimensions(2), OriginalPixelDimensions(3),OriginalPixelDimensions(1)];
-            
-            % we will
-            % need fields specific for a .nii file. The rest of this section adds these
-            % the the header struct file
-            vevo_niftii_header.Filename = output_filename;
-            vevo_niftii_header.SpaceUnits = 'Millimeter';
-            vevo_niftii_header.ImageSize = imagesize;
-            vevo_niftii_header.Description = scanmode;
-            vevo_niftii_header.Datatype = data_type;
-            vevo_niftii_header.Description = 'None';
-            vevo_niftii_header.Version = 'NIfTI1';
-            vevo_niftii_header.Qfactor = 1;
-            vevo_niftii_header.TimeUnits = 'None';
-            vevo_niftii_header.SliceCode = 'Unknown';
-            vevo_niftii_header.TransformName = 'Sform';
-            
-            % We should also position the image the right way when being read in
-            % ITK-Snap, MIPAV etc.: So we make an affine3d transform object and include the pixel
-            % dimensions in there. The transform type is similar to a T2-weighted MR
-            % image
-            
-            tform = affine3d([vevo_niftii_header.PixelDimensions(1) 0 0 0; ...
-                0 vevo_niftii_header.PixelDimensions(2) 0 0; ...
-                0 0 vevo_niftii_header.PixelDimensions(3) 0; ...
-                vevo_niftii_header.PixelDimensions(1) vevo_niftii_header.PixelDimensions(2) vevo_niftii_header.PixelDimensions(3) 1]);
-            
-            vevo_niftii_header.Transform = tform;
-            vevo_niftii_header.FrequencyDimension = 0;
-            vevo_niftii_header.PhaseDimension = 0;
-            vevo_niftii_header.SpatialDimension = 0;
-
-
-        end
-
-
         
+        function vevo_niftii_write_color(obj, fnameBase, scanmode, output_filename)
 
+            [~,RawDataInBmodeSpace, WidthAxis, DepthAxis, ZAxis] = obj.VsiOpenRawColor8(fnameBase);
+            
 
-
+            
+            % Bring into accompanying Bmode-Space
+            ImageData3D = rot90(rot90(RawDataInBmodeSpace));
+            ImageData3D = permute(ImageData3D, [2,3,1]);
+            ImageData3D = flip(ImageData3D,2);
+            OriginalPixelDimensions = [DepthAxis(2) - DepthAxis(1), WidthAxis(2) - WidthAxis(1), ZAxis(2) - ZAxis(1)];
+            data_type = class(ImageData3D);
+            vevo_niftii_header = obj.make_niftii_header(scanmode, data_type, OriginalPixelDimensions, size(ImageData3D), output_filename);
+            niftiwrite(ImageData3D,[output_filename '_' scanmode], vevo_niftii_header, 'Compressed',true);
+        end
+        
 
     end
 end
