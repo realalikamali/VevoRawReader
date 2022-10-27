@@ -617,7 +617,7 @@ classdef VevoRawReader < handle
         end
 
         function vevo_niftii_write_bmode(obj, fnameBase,scanmode, output_filename)
-            % Writes a niftii file containing the bmode image that is collected simultaneously with the oxyhemo information
+            % Writes a niftii file containing the bmode image
 
             [Rawdata, WidthAxis, DepthAxis, ZAxis] = obj.VsiOpenRawBmode8(fnameBase);
             
@@ -634,7 +634,7 @@ classdef VevoRawReader < handle
         end
         
         function vevo_niftii_write_color(obj, fnameBase, scanmode, output_filename)
-
+            % Writes a niftii file containing the color Doppler image
             [~,RawDataInBmodeSpace, WidthAxis, DepthAxis, ZAxis] = obj.VsiOpenRawColor8(fnameBase);
             
 
