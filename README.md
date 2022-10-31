@@ -21,17 +21,17 @@ scan_info = VevoRawReader_instance.scan_information_table(directory_of_interest)
 ```
 
 ## Reading Files into NIfTI Format
-Use either of the `vevo_niftii_write_bmode`, `vevo_niftii_write_oxyhemo`, or `vevo_niftii_write_color` methods to read corresponding raw files and convert them to NIFTII.
+Use either of the `vevo_nifti_write_bmode`, `vevo_nifti_write_oxyhemo`, or `vevo_nifti_write_color` methods to read corresponding raw files and convert them to NIfTI. 
 For example:
 ```
-VevoRawReader_instance.vevo_niftii_write_bmode(fnameBase, scanmode, output_filename);
+VevoRawReader_instance.vevo_nifti_write_bmode(fnameBase, scanmode, output_filename);
 ```
 where:
 
 
 **fnameBase** is the name of the file without extension.  
 **scanmode** is an arbitrary description that goes into the name of the output (e.g. the bmode image could be pure_bmode, or bmode_color, or bmode_oxyhemo, depending on what type of other image type it accompanies)  
-**output_filename** is the desired output niftii file name without extension.
+**output_filename** is the desired output nifti file name without extension.
 
 ## There is more!
 Refer to the code for more information on other useful methods in the class.

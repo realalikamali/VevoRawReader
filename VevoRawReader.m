@@ -1,6 +1,6 @@
 classdef VevoRawReader < handle
     % A MATLAB class to read, store and organize raw Vevo LAZR-X (and 2100)
-    % files and convert them to niftii files
+    % files and convert them to nifti files
     % A. Kamali, University of Arizona, 2022
 
     properties
@@ -85,9 +85,9 @@ classdef VevoRawReader < handle
             foldernames = string(foldernames); %Convert to string array
         end
         
-        function vevo_niftii_header = make_niftii_header(scanmode, data_type, voxel_dimensions_array, imagesize, output_filename)
-            % create a niftii header struct file to be used when writing
-            % niftii files from raw Vevo files
+        function vevo_nifti_header = make_nifti_header(scanmode, data_type, voxel_dimensions_array, imagesize, output_filename)
+            % create a nifti header struct file to be used when writing
+            % nifti files from raw Vevo files
 
             % Input Args:
             % scanmode: type of scan (e.g. bmode_color, color, bmode_oxy,
@@ -99,45 +99,45 @@ classdef VevoRawReader < handle
             % header file
             
             % Outputs:
-            % vevo_niftii_header struct
+            % vevo_nifti_header struct
 
             % initialize the struct file for the .nii header
-            vevo_niftii_header = struct;
+            vevo_nifti_header = struct;
             % The next two lines follow the same logic behind changing the
             % orientaion from Vevo space to conventional MR space
-            % that is explained in niftii writer functions in this class
+            % that is explained in nifti writer functions in this class
             OriginalPixelDimensions = voxel_dimensions_array;
-            vevo_niftii_header.PixelDimensions = [OriginalPixelDimensions(2), OriginalPixelDimensions(3),OriginalPixelDimensions(1)];
+            vevo_nifti_header.PixelDimensions = [OriginalPixelDimensions(2), OriginalPixelDimensions(3),OriginalPixelDimensions(1)];
             
             % we will
             % need fields specific for a .nii file. The rest of this section adds these
             % the the header struct file
-            vevo_niftii_header.Filename = output_filename;
-            vevo_niftii_header.SpaceUnits = 'Millimeter';
-            vevo_niftii_header.ImageSize = imagesize;
-            vevo_niftii_header.Description = scanmode;
-            vevo_niftii_header.Datatype = data_type;
-            vevo_niftii_header.Description = 'None';
-            vevo_niftii_header.Version = 'NIfTI1';
-            vevo_niftii_header.Qfactor = 1;
-            vevo_niftii_header.TimeUnits = 'None';
-            vevo_niftii_header.SliceCode = 'Unknown';
-            vevo_niftii_header.TransformName = 'Sform';
+            vevo_nifti_header.Filename = output_filename;
+            vevo_nifti_header.SpaceUnits = 'Millimeter';
+            vevo_nifti_header.ImageSize = imagesize;
+            vevo_nifti_header.Description = scanmode;
+            vevo_nifti_header.Datatype = data_type;
+            vevo_nifti_header.Description = 'None';
+            vevo_nifti_header.Version = 'NIfTI1';
+            vevo_nifti_header.Qfactor = 1;
+            vevo_nifti_header.TimeUnits = 'None';
+            vevo_nifti_header.SliceCode = 'Unknown';
+            vevo_nifti_header.TransformName = 'Sform';
             
             % We should also position the image the right way when being read in
             % ITK-Snap, MIPAV etc.: So we make an affine3d transform object and include the pixel
             % dimensions in there. The transform type is similar to a conventional MR scan, e.g. T2-weighted MR
             % image
             
-            tform = affine3d([vevo_niftii_header.PixelDimensions(1) 0 0 0; ...
-                0 vevo_niftii_header.PixelDimensions(2) 0 0; ...
-                0 0 vevo_niftii_header.PixelDimensions(3) 0; ...
-                vevo_niftii_header.PixelDimensions(1) vevo_niftii_header.PixelDimensions(2) vevo_niftii_header.PixelDimensions(3) 1]);
+            tform = affine3d([vevo_nifti_header.PixelDimensions(1) 0 0 0; ...
+                0 vevo_nifti_header.PixelDimensions(2) 0 0; ...
+                0 0 vevo_nifti_header.PixelDimensions(3) 0; ...
+                vevo_nifti_header.PixelDimensions(1) vevo_nifti_header.PixelDimensions(2) vevo_nifti_header.PixelDimensions(3) 1]);
             
-            vevo_niftii_header.Transform = tform;
-            vevo_niftii_header.FrequencyDimension = 0;
-            vevo_niftii_header.PhaseDimension = 0;
-            vevo_niftii_header.SpatialDimension = 0;
+            vevo_nifti_header.Transform = tform;
+            vevo_nifti_header.FrequencyDimension = 0;
+            vevo_nifti_header.PhaseDimension = 0;
+            vevo_nifti_header.SpatialDimension = 0;
 
 
         end
@@ -576,8 +576,8 @@ classdef VevoRawReader < handle
         
         
 
-        function vevo_niftii_write_oxyhemo(obj, fnameBase, output_filename, file_to_save, HbTThreshold)
-            % Writes a niftii file containing the oxyhemo information with
+        function vevo_nifti_write_oxyhemo(obj, fnameBase, output_filename, file_to_save, HbTThreshold)
+            % Writes a nifti file containing the oxyhemo information with
             % given settings
 
             % Input Args:
@@ -612,12 +612,12 @@ classdef VevoRawReader < handle
 
             OriginalPixelDimensions = [DepthAxis(2) - DepthAxis(1), WidthAxis(2) - WidthAxis(1), ZAxis(2) - ZAxis(1)];
             data_type = class(ImageData3D);
-            vevo_niftii_header = obj.make_niftii_header(scanmode, data_type, OriginalPixelDimensions, size(ImageData3D), output_filename);
-            niftiwrite(ImageData3D,[output_filename '_' scanmode], vevo_niftii_header, 'Compressed',true);
+            vevo_nifti_header = obj.make_nifti_header(scanmode, data_type, OriginalPixelDimensions, size(ImageData3D), output_filename);
+            niftiwrite(ImageData3D,[output_filename '_' scanmode], vevo_nifti_header, 'Compressed',true);
         end
 
-        function vevo_niftii_write_bmode(obj, fnameBase,scanmode, output_filename)
-            % Writes a niftii file containing the bmode image
+        function vevo_nifti_write_bmode(obj, fnameBase,scanmode, output_filename)
+            % Writes a nifti file containing the bmode image
 
             [Rawdata, WidthAxis, DepthAxis, ZAxis] = obj.VsiOpenRawBmode8(fnameBase);
             
@@ -629,12 +629,12 @@ classdef VevoRawReader < handle
             ImageData3D = flip(ImageData3D,2);
             OriginalPixelDimensions = [DepthAxis(2) - DepthAxis(1), WidthAxis(2) - WidthAxis(1), ZAxis(2) - ZAxis(1)];
             data_type = class(ImageData3D);
-            vevo_niftii_header = obj.make_niftii_header(scanmode, data_type, OriginalPixelDimensions, size(ImageData3D), output_filename);
-            niftiwrite(ImageData3D,[output_filename '_' scanmode], vevo_niftii_header, 'Compressed',true);
+            vevo_nifti_header = obj.make_nifti_header(scanmode, data_type, OriginalPixelDimensions, size(ImageData3D), output_filename);
+            niftiwrite(ImageData3D,[output_filename '_' scanmode], vevo_nifti_header, 'Compressed',true);
         end
         
-        function vevo_niftii_write_color(obj, fnameBase, scanmode, output_filename)
-            % Writes a niftii file containing the color Doppler image
+        function vevo_nifti_write_color(obj, fnameBase, scanmode, output_filename)
+            % Writes a nifti file containing the color Doppler image
             [~,RawDataInBmodeSpace, WidthAxis, DepthAxis, ZAxis] = obj.VsiOpenRawColor8(fnameBase);
             
 
@@ -645,8 +645,8 @@ classdef VevoRawReader < handle
             ImageData3D = flip(ImageData3D,2);
             OriginalPixelDimensions = [DepthAxis(2) - DepthAxis(1), WidthAxis(2) - WidthAxis(1), ZAxis(2) - ZAxis(1)];
             data_type = class(ImageData3D);
-            vevo_niftii_header = obj.make_niftii_header(scanmode, data_type, OriginalPixelDimensions, size(ImageData3D), output_filename);
-            niftiwrite(ImageData3D,[output_filename '_' scanmode], vevo_niftii_header, 'Compressed',true);
+            vevo_nifti_header = obj.make_nifti_header(scanmode, data_type, OriginalPixelDimensions, size(ImageData3D), output_filename);
+            niftiwrite(ImageData3D,[output_filename '_' scanmode], vevo_nifti_header, 'Compressed',true);
         end
         
 
