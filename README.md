@@ -1,5 +1,5 @@
 # VevoRawReader
-A MATLAB Class to Read and Organize Raw Data from Vevo LAZR-X (and 2100) and Convert to NIfTI Files
+A MATLAB Class to Read and Organize Raw Data from Vevo LAZR-X (2100 and 3100) and Convert to NIfTI Files
 
 ## Quick Setup
 Clone the repository (or download the VevoRawReader.m file) and store in a directory on your computer. Add that directory to MATLAB path interactively via Home/Environment/Set Path.  
